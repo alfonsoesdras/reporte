@@ -6,6 +6,7 @@
 <title>Reporte de Daños · TMAZ</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
 :root{--bg:#f4f6f4;--card:#fff;--tx:#1a2420;--mut:#5d6b64;--g:#14692f;--gl:#e3f1e7;--bd:#d3dbd5;--red:#b3261e;--redl:#fbe9e7;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121815;--card:#1b231f;--tx:#e8eee9;--mut:#9aa8a0;--g:#4cbb6b;--gl:#1f3626;--bd:#33413a;--red:#f2877f;--redl:#3a1f1c;color-scheme:dark}}
@@ -243,7 +244,7 @@ function buildReport(k){
  if(cp.length)pages.push(cp);
  var ann=pages.map(function(pg,n){return `<div class='pg'><div class='rg' style='padding:6px 8px;font-size:12px;font-weight:700'>ANEXO FOTOGRÁFICO · ${I[0]} · ${cfg.n.toUpperCase()} · Servicio: ${E($('h_serv').value)} · Pág. ${n+1}/${pages.length}</div>`+pg.map(function(it){var r=it[1];return `<div style='border:1.5px solid #000;margin-top:8px;padding:6px'><b>#${it[0]+1} · ${E(r.id)}</b> — ${r.c.map(function(c){return c==='SD'?'Sin daños':nm(k,c)}).join(', ')}<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:6px'>${r.p.map(function(s){return `<img class='ph' src='${s}'>`}).join('')}</div></div>`}).join('')+footer()+`</div>`}).join('');
  return p1+ann}
-function rexp(){var b=$('exp');b.innerHTML='';Object.keys(rows).forEach(function(k){if(!rows[k].length)return;var x=el('button','btn','⬇ Exportar PDF · '+CFG[k].n);x.style.minWidth='46%';x.onclick=function(){exportPdf(k)};b.appendChild(x)})}
+function rexp(){var b=$('exp');b.innerHTML='';Object.keys(rows).forEach(function(k){if(!rows[k].length)return;var x=el('button','btn','⬇ PDF · '+CFG[k].n);x.style.minWidth='46%';x.onclick=function(){exportPdf(k)};b.appendChild(x);var y=el('button','btn','⬇ Excel · '+CFG[k].n);y.style.minWidth='46%';y.onclick=function(){exportXlsx(k)};b.appendChild(y)})}
 async function exportPdf(k){
  var m=$('msg2');
  if(!window.html2canvas||!window.jspdf){m.textContent='No cargó la librería de PDF. Revisa tu conexión.';return}
@@ -253,12 +254,55 @@ async function exportPdf(k){
   var pdf=new jspdf.jsPDF({unit:'pt',format:'letter'});
   var pgs=host.querySelectorAll('.pg');
   for(var i=0;i<pgs.length;i++){var c=await html2canvas(pgs[i],{scale:2,backgroundColor:'#ffffff'});if(i)pdf.addPage();pdf.addImage(c.toDataURL('image/jpeg',.85),'JPEG',0,0,612,792)}
-  var dl=(window.claude&&claude.use)?await claude.use('downloads'):null;
   var f=$('h_fecha').value||'sin-fecha';
-  if(dl){await dl.save({filename:INFO[k][0]+'_'+CFG[k].n+'_'+f+'.pdf',data:pdf.output('blob')});m.textContent='Reporte listo.'}
-  else{m.textContent='La descarga no está disponible en esta vista. Abre el artifact en claude.ai.'}
+  await saveFile(INFO[k][0]+'_'+CFG[k].n+'_'+f+'.pdf',pdf.output('blob'));m.textContent='PDF listo.'
  }catch(e){m.textContent=(e&&e.code==='declined')?'Descarga cancelada.':'No se pudo generar el PDF.'}
  host.innerHTML=''}
+async function saveFile(name,blob){
+ var dl=(window.claude&&claude.use)?await claude.use('downloads'):null;
+ if(dl){await dl.save({filename:name,data:blob});return}
+ var u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},5000)}
+async function exportXlsx(k){
+ var m=$('msg2');
+ if(!window.ExcelJS){m.textContent='No cargó la librería de Excel. Revisa tu conexión.';return}
+ m.textContent='Generando Excel…';
+ try{
+  var I=INFO[k],cfg=CFG[k],R=rows[k],codes=[];
+  cfg.g.forEach(function(g){g[1].forEach(function(x){codes.push(x[0])})});
+  var nc=4+codes.length,wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Reporte');
+  var bd={top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}};
+  var green={type:'pattern',pattern:'solid',fgColor:{argb:'FF14692F'}};
+  ws.getColumn(1).width=5;ws.getColumn(2).width=32;for(var c=3;c<=nc;c++)ws.getColumn(c).width=7;
+  var r=1;
+  function line(txt,o){ws.mergeCells(r,1,r,nc);var cl=ws.getCell(r,1);cl.value=txt;cl.alignment={wrapText:true,vertical:'middle',horizontal:(o&&o.l)?'left':'center'};if(o&&o.b)cl.font={bold:true,size:o.s||11};if(o&&o.h)ws.getRow(r).height=o.h;r++}
+  line(I[1],{b:1,s:14});
+  line(I[0]+' · Versión 00 · Fecha del formato: '+I[2]+' · Área: OPERACIONES',{});
+  line('N.º de servicio: '+$('h_serv').value+'   |   Fecha: '+fdate($('h_fecha').value)+'   |   Turno: '+$('h_turno').value,{l:1});
+  line('Inspector: '+$('h_insp').value+'   |   Ubicación: '+$('h_ubi').value+'   |   Material: '+cfg.n,{l:1});
+  line(I[3],{h:48});
+  line('SD Sin daños | '+codes.map(function(c){return c+' '+nm(k,c)}).join(' | '),{b:1,s:9,h:32});
+  var hd=['#','Número de identificación','SD'].concat(codes,['Fotos']);
+  hd.forEach(function(t,i){var cl=ws.getCell(r,i+1);cl.value=t;cl.fill=green;cl.font={bold:true,color:{argb:'FFFFFFFF'}};cl.alignment={horizontal:'center'};cl.border=bd});r++;
+  for(var i=0;i<25;i++){var x=R[i],vals=[i+1,x?x.id:'',x&&x.c.indexOf('SD')>-1?'X':''];codes.forEach(function(c){vals.push(x&&x.c.indexOf(c)>-1?'X':'')});vals.push(x&&x.p.length?x.p.length:'');
+   vals.forEach(function(v,j){var cl=ws.getCell(r,j+1);cl.value=v;cl.border=bd;cl.alignment={horizontal:j===1?'left':'center'}});r++}
+  r++;line('Observaciones generales: '+$('obs').value,{l:1,h:48});r++;
+  var sigs=[$('s1'),$('s2')];
+  sigs.forEach(function(s,i){if(s.has){var id=wb.addImage({base64:s.toDataURL('image/png').split(',')[1],extension:'png'});ws.addImage(id,{tl:{col:i?3:1,row:r-1},ext:{width:170,height:60}})}});
+  r+=4;
+  ws.getCell(r,2).value='Supervisor: '+$('n1').value;ws.getCell(r,4).value='Parte interesada: '+$('n2').value;
+  var wp=wb.addWorksheet('Fotos');for(var q=1;q<=4;q++)wp.getColumn(q).width=32;
+  var pr=1;
+  R.forEach(function(x,i){if(!x.p||!x.p.length)return;
+   wp.mergeCells(pr,1,pr,4);var h=wp.getCell(pr,1);h.value='#'+(i+1)+' · '+x.id+' — '+x.c.map(function(c){return c==='SD'?'Sin daños':nm(k,c)}).join(', ');h.font={bold:true};pr++;
+   var n=Math.ceil(x.p.length/4);
+   for(var a=0;a<n;a++)wp.getRow(pr+a).height=126;
+   x.p.forEach(function(s,j){var id=wb.addImage({base64:s.split(',')[1],extension:'jpeg'});wp.addImage(id,{tl:{col:j%4,row:pr-1+Math.floor(j/4)},ext:{width:220,height:165}})});
+   pr+=n+1});
+  if(pr===1)wb.removeWorksheet(wp.id);
+  var buf=await wb.xlsx.writeBuffer();
+  await saveFile(I[0]+'_'+cfg.n+'_'+($('h_fecha').value||'sin-fecha')+'.xlsx',new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  m.textContent='Excel listo.';
+ }catch(e){m.textContent=(e&&e.code==='declined')?'Descarga cancelada.':'No se pudo generar el Excel.'}}
 (function(){var d=new Date(),z=function(n){return ('0'+n).slice(-2)};$('h_fecha').value=d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())})();
 tiles();list();
 </script>
